@@ -22,14 +22,21 @@ class ScraperSenescyt(NavegadorScraper):
         except Exception:
             return False
 
-    def obtener_persona_con_titulos(self, contenedor: ElementHandle) -> dict:
+    # ── Extracción general ──────────────────────────────────────────────────
+
+    def obtener_resultado(self) -> dict:
         return {
-            'persona': self._extraer_persona(contenedor),
-            'titulos': self._extraer_todos_los_titulos(contenedor),
+            'persona': self._extraer_persona(),
+            'certificaciones': self._extraer_todas_las_tablas(),
         }
 
-    def _extraer_persona(self, contenedor: ElementHandle) -> dict:
-        panel = contenedor.query_selector("div[id$='pnlInfoPersonal']")
+    def _extraer_persona(self) -> dict:
+        panel = self.page.query_selector("div[id$='pnlInfoPersonal']")
+        if not panel:
+            # Fallback: info personal dentro del panel SETEC
+            panel = self.page.query_selector("[id$='pnlSetec'] table.ui-panelgrid")
+        if not panel:
+            return {}
         info = {}
         for fila in self._leer_filas(panel, 'tr'):
             celdas = self._leer_celdas(fila)
@@ -39,25 +46,32 @@ class ScraperSenescyt(NavegadorScraper):
             info[clave] = celdas[1].text_content().strip()
         return info
 
-    def _extraer_todos_los_titulos(self, contenedor: ElementHandle) -> list:
-        titulos = []
-        for panel in contenedor.query_selector_all("div[id$='pnlListaTitulos']"):
-            nivel = self._leer_texto(panel, '.panel-title')
-            titulos.extend(self._extraer_tabla(panel, nivel))
-        return titulos
-
-    def _extraer_tabla(self, panel: ElementHandle, tipo_titulo: str) -> list:
-        tabla = panel.query_selector("table[role='grid']")
-        encabezados = [th.text_content().strip() for th in tabla.query_selector_all('thead th')]
-
+    def _extraer_todas_las_tablas(self) -> list[dict]:
         registros = []
-        for fila in tabla.query_selector_all('tbody tr'):
-            valores = [self._texto_celda(td) for td in self._leer_celdas(fila)]
-            if not any(valores):
+        for tabla in self.page.query_selector_all("table[role='grid']"):
+            panel_id = tabla.evaluate(
+                "el => el.closest('[id]')?.id ?? ''"
+            )
+            panel_titulo = tabla.evaluate(
+                """el => {
+                    const panel = el.closest('.panel');
+                    return panel?.querySelector('.panel-title')?.textContent?.trim() ?? '';
+                }"""
+            )
+            encabezados = [
+                th.text_content().strip()
+                for th in tabla.query_selector_all('thead th')
+            ]
+            if not encabezados:
                 continue
-            registro = dict(zip(encabezados, valores))
-            registro['tipo_titulo'] = tipo_titulo
-            registros.append(registro)
+            for fila in tabla.query_selector_all('tbody tr'):
+                valores = [self._texto_celda(td) for td in self._leer_celdas(fila)]
+                if not any(valores):
+                    continue
+                registro = dict(zip(encabezados, valores))
+                registro['fuente_panel_id'] = panel_id
+                registro['fuente_panel_titulo'] = panel_titulo
+                registros.append(registro)
         return registros
 
     def _texto_celda(self, celda: ElementHandle) -> str:
@@ -69,6 +83,8 @@ class ScraperSenescyt(NavegadorScraper):
         if etiqueta and texto.startswith(etiqueta):
             texto = texto[len(etiqueta):].strip()
         return texto
+
+    # ── Flujo de consulta ───────────────────────────────────────────────────
 
     def llenar_formulario(self, cedula: str, captcha: str):
         self._escribir_cedula(cedula)
@@ -86,30 +102,37 @@ class ScraperSenescyt(NavegadorScraper):
         print(f'📨 Enviando captcha: {captcha}')
         campo.press('Enter')
 
-    def esperar_resultados_consulta(self, cedula: str) -> ElementHandle:
+    def esperar_resultados_consulta(self, cedula: str) -> bool:
+        """Espera hasta que la página resuelva la consulta.
+        Retorna True si hay resultados, False si la persona no tiene registros."""
         self.page.wait_for_function(
             """(cedula) => {
-                const el = document.querySelector("span[id$='groupDatos']");
-                return el && el.textContent.includes(cedula);
+                if (document.querySelector('.msg-rojo')) return true;
+                const titulos = document.querySelector("span[id$='groupDatos']");
+                if (titulos && titulos.textContent.includes(cedula)) return true;
+                const setec = document.querySelector("[id$='pnlSetec']");
+                if (setec && setec.textContent.includes(cedula)) return true;
+                return false;
             }""",
             arg=cedula,
         )
-        return self.page.query_selector("span[id$='groupDatos']")
+        return self.page.query_selector('.msg-rojo') is None
 
     def consultar_cedula(self, cedula: str, max_intentos: int = 5) -> dict:
         for intento in range(1, max_intentos + 1):
-
             try:
                 captcha = self.decodificar_captcha()
                 self.llenar_formulario(cedula, captcha)
-                contenedor = self.esperar_resultados_consulta(cedula)
-                return self.obtener_persona_con_titulos(contenedor)
+                tiene_resultados = self.esperar_resultados_consulta(cedula)
+                if not tiene_resultados:
+                    print(f'ℹ️  {cedula}: sin registros en SENESCYT')
+                    return {'persona': {}, 'certificaciones': []}
+                return self.obtener_resultado()
             except Exception as e:
                 self.guardar_estado(f"{cedula}_{intento}")
-                print(f'⚠️  Intento {intento}/{max_intentos} fallido (captcha incorrecto o timeout)')
+                print(f'⚠️  Intento {intento}/{max_intentos} fallido: {e}')
                 self.page.reload(wait_until='domcontentloaded')
                 self.cerrar_dialogo()
-                print(e)
         raise RuntimeError(f'No se pudo consultar la cédula {cedula} tras {max_intentos} intentos')
 
     def decodificar_captcha(self) -> str:
