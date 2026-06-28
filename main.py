@@ -1,40 +1,45 @@
-import sys
-from scraper_senescyt.Scrapper.navegador_scraper import NavegadorScraper
+import csv
+import time
+from pathlib import Path
+
 from scraper_senescyt.Scrapper.scraper_senescyt import ScraperSenescyt
 
 
-def main():
-    print("Python:", sys.executable)
+def tick(label: str, t0: float) -> float:
+    elapsed = time.perf_counter() - t0
+    print(f"[{elapsed:6.2f}s] {label}")
+    return time.perf_counter()
 
-    url = "https://www.senescyt.gob.ec/web/guest/consultas"   # <-- pon tu URL real
+
+def leer_cedulas(path: str) -> list[str]:
+    with open(path, newline='', encoding='utf-8') as f:
+        return [row[0].strip() for row in csv.reader(f) if row and row[0].strip()]
+
+
+def main():
+    url = "https://www.senescyt.gob.ec/web/guest/consultas"
+    cedulas = leer_cedulas(Path(__file__).parent / "cedula.csv")
+    total_start = time.perf_counter()
 
     scraper = ScraperSenescyt()
     try:
-        # 1. Cargar la página
         scraper.get_page(url)
-        scraper.guardar_estado("1")
-
-        # 2. Cerrar el diálogo/popup inicial si aparece
         scraper.cerrar_dialogo()
-        scraper.guardar_estado("2")
 
-        captcha = scraper.decodificar_captcha()
-        scraper.llenar_formulario('0604370270', captcha)
-        scraper.guardar_estado("3")
-
-        # 3. (aquí van los pasos de tu flujo: escribir cédula, buscar, etc.)
-        # scraper.buscar(cedula="...")
-
-        # 4. Obtener el HTML / resultados
-        contenedor = scraper.esperar_resultados_consulta()
-        returns = scraper.obtener_persona_con_titulos(contenedor)
-        scraper.guardar_estado(4)
-        print(returns)
-
+        for i, cedula in enumerate(cedulas, 1):
+            print(f"\n--- [{i}/{len(cedulas)}] Consultando: {cedula} ---")
+            t = time.perf_counter()
+            try:
+                resultado = scraper.consultar_cedula(cedula)
+                tick("consultar_cedula", t)
+                print(resultado)
+            except RuntimeError as e:
+                print(f"❌ {e}")
 
     finally:
-        # Cerrar siempre el navegador, pase lo que pase
-        scraper.driver.quit()
+        scraper.close()
+
+    print(f"\nTotal: {time.perf_counter() - total_start:.2f}s")
 
 
 if __name__ == "__main__":
