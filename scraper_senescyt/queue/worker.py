@@ -75,11 +75,16 @@ def run(worker_num: int = 0):
                 continue
 
             _, cedula = item
+            pipe = r.pipeline()
+            pipe.hset(RedisKey.HASH_ESTADO, cedula, CedulaEstado.CONSULTADA.CONSULTANDO)
+            pipe.hset(RedisKey.HASHTIMESTAMP, cedula, time.time())
+            pipe.execute()
             r.hset(RedisKey.HASH_ESTADO, cedula, CedulaEstado.CONSULTANDO)
 
             try:
                 resultado = scraper.consultar_cedula(cedula)
                 r.hset(RedisKey.HASH_ESTADO, cedula, CedulaEstado.CONSULTADA)
+                pipe.hdel(RedisKey.HASH_TIMESTAMP, cedula)
 
                 entry = json.dumps({
                     'cedula':          cedula,
@@ -95,6 +100,7 @@ def run(worker_num: int = 0):
                 time.sleep(random.uniform(2, 5))
                 scraper.page.reload(wait_until='domcontentloaded')
                 scraper.cerrar_dialogo()
+                pipe.hdel(RedisKey.HASH_TIMESTAMP, cedula)
                 continue
 
             # ── Intentar flush del buffer (Lua atómico) ─────────────────────

@@ -61,9 +61,23 @@ def _reencolar_errores(r):
 
 
 def _recuperar_stale(r):
-    """Devuelve a 'pendiente' cédulas que llevan demasiado tiempo en 'consultando'."""
+    """Devuelve a 'pendiente' solo las cédulas que llevan
+    demasiado tiempo en 'consultando' (worker probablemente caído)."""
+    ahora = time.time()
     estados = r.hgetall(RedisKey.HASH_ESTADO)
-    stale = [c for c, e in estados.items() if e == CedulaEstado.CONSULTANDO]
+    timestamps = r.hgetall(RedisKey.HASH_TIMESTAMP)
+
+    stale = []
+    for cedula, estado in estados.items():
+        if estado != CedulaEstado.CONSULTANDO:
+            continue
+        ts = timestamps.get(cedula)
+        if ts is None:
+            # Sin timestamp: caso anómalo, lo tratamos como stale por seguridad
+            stale.append(cedula)
+            continue
+        if ahora - float(ts) > STALE_THRESHOLD:
+            stale.append(cedula)
 
     if not stale:
         return
@@ -72,8 +86,9 @@ def _recuperar_stale(r):
     for cedula in stale:
         pipe.rpush(RedisKey.QUEUE_PENDIENTES, cedula)
         pipe.hset(RedisKey.HASH_ESTADO, cedula, CedulaEstado.PENDIENTE)
+        pipe.hdel(RedisKey.HASH_TIMESTAMP, cedula)
     pipe.execute()
-    print(f"[Refiller] Recuperadas {len(stale)} cédulas stale (worker caído)")
+    print(f"[Refiller] Recuperadas {len(stale)} cédulas stale (>{STALE_THRESHOLD}s)")
 
 
 def _limpiar_subidas(r):
