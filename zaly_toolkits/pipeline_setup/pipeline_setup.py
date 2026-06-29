@@ -1,11 +1,11 @@
 import yaml
 
-from dwh_facturacion.utils.RunMode import RunMode
-
+from zaly_toolkits.utils.utils_class import RunMode
+# CLASE QUE SE DEBE REDISENAR PUESTO QUE SU USO ESTA OBSOLETO
 
 class PipelineGlobalConfig:
 
-    def __init__(self, path="config/pipeline_config.yaml"):
+    def __init__(self, path="config/pipeline_setup.yaml"):
         with open(path, "r") as f:
             config = yaml.safe_load(f)
 

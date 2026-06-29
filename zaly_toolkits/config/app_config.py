@@ -1,6 +1,6 @@
 from typing import Literal
 
-from dwh_facturacion.utils.RunMode import RunMode
+from scraper_senescyt.utils.RunMode import RunMode
 
 
 class AppConfig:

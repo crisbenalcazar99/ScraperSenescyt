@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 import pandas as pd
 from sqlalchemy.dialects.postgresql import insert
 
-from dwh_facturacion.utils.mode_persistence import ModePersistence
+from scraper_senescyt.utils.mode_persistence import ModePersistence
 
 
 class BaseModel:

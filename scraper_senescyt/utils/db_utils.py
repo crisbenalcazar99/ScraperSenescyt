@@ -1,6 +1,6 @@
 from sqlalchemy import text
 
-from dwh_facturacion.models.base import Base
+from scraper_senescyt.entities.models.base import Base
 from sqlalchemy import inspect
 
 def truncate_tables(session, tables):
