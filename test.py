@@ -1,11 +1,8 @@
-from zaly_toolkits.common.db import get_engine
-from sqlalchemy import text
+from zaly_toolkits.common.redis_db import get_redis
+from scraper_senescyt.utils.redis_keys import RedisKey, CedulaEstado
 
-with get_engine("SENESCYT").connect() as conn:
-    result = conn.execute(text("""
-                               SELECT COUNT(*)
-                               FROM information_schema.tables
-                               WHERE table_schema = 'senescyt'
-                                 AND table_name = 'senescyt_consulta'
-                               """))
-    print("Tabla existe:", result.scalar() == 1)
+r = get_redis()
+estados = r.hgetall(RedisKey.HASH_ESTADO)
+consultando = {c: e for c, e in estados.items() if e == CedulaEstado.CONSULTANDO}
+print(f"Cédulas en proceso ahora: {len(consultando)}")
+print(consultando)

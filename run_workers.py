@@ -8,11 +8,11 @@ from scraper_senescyt.queue.worker import run
 
 def _worker_proceso(worker_num: int):
     print(f"[Worker-{worker_num}] PID={os.getpid()} iniciado")
-    run()
+    run(worker_num)
 
 
 def main():
-    n = int(os.environ.get('N_WORKERS', 3))
+    n = int(os.environ.get('N_WORKERS', 5))
     print(f"Lanzando {n} workers...")
 
     procesos = [

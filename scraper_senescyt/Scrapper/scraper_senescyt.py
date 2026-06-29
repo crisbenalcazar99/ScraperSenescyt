@@ -87,6 +87,10 @@ class ScraperSenescyt(NavegadorScraper):
     # ── Flujo de consulta ───────────────────────────────────────────────────
 
     def llenar_formulario(self, cedula: str, captcha: str):
+        # Captura el ViewState antes de enviar — cambia con cada respuesta AJAX de JSF
+        self._prev_view_state = self.page.evaluate(
+            "() => document.querySelector('[id*=\"ViewState\"]')?.value"
+        )
         self._escribir_cedula(cedula)
         self._escribir_captcha(captcha)
 
@@ -103,20 +107,41 @@ class ScraperSenescyt(NavegadorScraper):
         campo.press('Enter')
 
     def esperar_resultados_consulta(self, cedula: str) -> bool:
-        """Espera hasta que la página resuelva la consulta.
-        Retorna True si hay resultados, False si la persona no tiene registros."""
-        self.page.wait_for_function(
-            """(cedula) => {
-                if (document.querySelector('.msg-rojo')) return true;
-                const titulos = document.querySelector("span[id$='groupDatos']");
-                if (titulos && titulos.textContent.includes(cedula)) return true;
-                const setec = document.querySelector("[id$='pnlSetec']");
-                if (setec && setec.textContent.includes(cedula)) return true;
-                return false;
-            }""",
-            arg=cedula,
-        )
-        return self.page.query_selector('.msg-rojo') is None
+        """Espera hasta que el AJAX de JSF complete y evalúa el resultado.
+
+        Retorna True si hay resultados, False si la persona no tiene registros.
+        Lanza RuntimeError si el captcha fue incorrecto o el servicio falló.
+
+        Esperar el cambio de ViewState garantiza leer la respuesta del request
+        ACTUAL, no un msg-rojo obsoleto de la consulta anterior.
+        """
+        prev_vs = getattr(self, '_prev_view_state', None)
+        if prev_vs:
+            self.page.wait_for_function(
+                """(prevVs) => {
+                    const vs = document.querySelector('[id*="ViewState"]')?.value;
+                    return vs !== undefined && vs !== prevVs;
+                }""",
+                arg=prev_vs,
+            )
+
+        # Captcha incorrecto → ui-messages-error con "incorrectos"
+        msg_error = self.page.query_selector('.ui-messages-error')
+        if msg_error and 'incorrectos' in msg_error.text_content().lower():
+            raise RuntimeError(f'Captcha incorrecto para {cedula}')
+
+        # Sin resultados o error del servicio
+        msg_rojo = self.page.query_selector('.msg-rojo')
+        if msg_rojo:
+            texto = msg_rojo.text_content().strip()
+            print(f'🔴 msg-rojo para {cedula}: "{texto}"')
+            SIN_REGISTROS = ('no se encontr', 'no tiene registro', 'no existen dato', 'no se obtuvieron')
+            if any(frase in texto.lower() for frase in SIN_REGISTROS):
+                return False
+            self.guardar_estado(f"error_servicio_{cedula}")
+            raise RuntimeError(f'Error del servicio para {cedula}: "{texto}"')
+
+        return True
 
     def consultar_cedula(self, cedula: str, max_intentos: int = 5) -> dict:
         for intento in range(1, max_intentos + 1):
@@ -137,7 +162,7 @@ class ScraperSenescyt(NavegadorScraper):
 
     def decodificar_captcha(self) -> str:
         img_captcha = self.page.wait_for_selector('//*[@id="formPrincipal:capimg"]')
-        path_img = 'captcha.png'
+        path_img = f'captcha_{os.getpid()}.png'
         bbox = img_captcha.bounding_box()
         with open(path_img, 'wb') as f:
             f.write(self.page.screenshot(clip=bbox))

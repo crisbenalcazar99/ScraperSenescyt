@@ -23,18 +23,20 @@ def _worker_id() -> str:
 
 def _flush_a_postgres(session, items_json: list[str]):
     """Escribe un batch de registros a PostgreSQL con upsert."""
-    records = []
+    # dict por cédula para eliminar duplicados dentro del mismo batch
+    records_map = {}
     for raw in items_json:
         entry = json.loads(raw)
         persona = entry.get('resultado', {}).get('persona', {})
-        records.append({
+        records_map[entry['cedula']] = {
             'cedula':          entry['cedula'],
             'nombres':         persona.get('Nombres') or persona.get('Nombres Completos'),
             'genero':          persona.get('Género'),
             'nacionalidad':    persona.get('Nacionalidad'),
             'sin_resultados':  entry.get('sin_resultados', False),
             'certificaciones': entry.get('resultado', {}).get('certificaciones', []),
-        })
+        }
+    records = list(records_map.values())
 
     stmt = insert(SenescytConsulta).values(records)
     stmt = stmt.on_conflict_do_update(
@@ -52,8 +54,8 @@ def _flush_a_postgres(session, items_json: list[str]):
     session.commit()
 
 
-def run():
-    wid     = _worker_id()
+def run(worker_num: int = 0):
+    wid     = f"{worker_num}|{_worker_id()}"
     r       = get_redis()
     session = get_session_maker(BASE_DESTINO)()
     flush   = r.register_script(LUA_FLUSH_BUFFER)
