@@ -5,8 +5,8 @@ import logging
 
 from sqlalchemy import update, bindparam, func
 
-from dwh_facturacion.common.session_manager import get_session
-from dwh_facturacion.utils.mode_persistence import ModePersistence
+from zaly_toolkits.common.session_manager import get_session
+from scraper_senescyt.utils.mode_persistence import ModePersistence
 
 
 class DWLoader(BaseEstimator, TransformerMixin):

@@ -1,60 +1,64 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-
-import os
-
-from webdriver_manager.chrome import ChromeDriverManager
-
+from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext, ElementHandle, Playwright
 
 
 class NavegadorScraper:
     def __init__(self):
-        # Configuracion del Navegador de Scrapper
-        self.options = webdriver.ChromeOptions()
-        self.options.binary_location = '/usr/bin/chromium'
-        self.options.add_argument('--headless=new')
-        self.options.add_argument('--disable-gpu')
-        self.options.add_argument('--disable-dev-shm-usage')
-        self.options.add_argument('--no-sandbox')
-        self.options.add_argument('--ignore-certificate-errors')
-        self.options.add_argument('--ignore-ssl-errors')
-        self.options.add_argument('--window-size=1920,1080')
-        self.options.add_argument('--disable-extensions')
-        self.options.add_argument('--remote-allow-origins=*')
-        self.options.page_load_strategy = 'eager'
-        os.environ['WDM_SSL_VERIFY'] = '0'
+        self._playwright: Playwright = sync_playwright().start()
+        self.browser: Browser = self._playwright.chromium.launch(
+            headless=True,
+            args=[
+                '--disable-gpu',
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+                '--disable-extensions',
+            ],
+        )
+        self.context: BrowserContext = self._new_context()
+        self.page: Page = self.context.new_page()
+        self._apply_timeouts()
 
-        # Atributos de la clase
-        self.service = Service('/usr/bin/chromedriver')
-        self.driver = webdriver.Chrome(service=self.service, options=self.options)
-        self.driver.set_page_load_timeout(30)
-        self.wait = WebDriverWait(self.driver, 15)
+    def _new_context(self) -> BrowserContext:
+        return self.browser.new_context(
+            viewport={'width': 1920, 'height': 1080},
+            ignore_https_errors=True,
+        )
 
-    def get_page(self, url):
-        return self.driver.get(url)
+    def _apply_timeouts(self):
+        self.page.set_default_timeout(15_000)
+        self.page.set_default_navigation_timeout(30_000)
 
-
+    def get_page(self, url: str):
+        self.page.goto(url, wait_until='domcontentloaded')
 
     def refresh_page(self):
         try:
-            self.driver.quit()
-        except:
+            self.page.close()
+            self.context.close()
+        except Exception:
             pass
-        # IMPORTANTE: recrear con service + options, igual que en __init__
-        self.driver = webdriver.Chrome(service=self.service, options=self.options)
+        self.context = self._new_context()
+        self.page = self.context.new_page()
+        self._apply_timeouts()
         print('✅ Navegador reiniciado')
 
-    def _leer_celdas(self, fila):
-        return fila.find_elements(By.TAG_NAME, 'td')
+    def close(self):
+        try:
+            self.browser.close()
+        except Exception:
+            pass
+        try:
+            self._playwright.stop()
+        except Exception:
+            pass
 
-    def _leer_texto(self, elemento, by, selector):
-        return elemento.find_element(by, selector).text.strip()
+    def _leer_celdas(self, fila: ElementHandle) -> list[ElementHandle]:
+        return fila.query_selector_all('td')
 
-    def _leer_filas(self, seccion, by, selector):
-        return seccion.find_elements(by, selector)
+    def _leer_texto(self, elemento: ElementHandle, selector: str) -> str:
+        return elemento.query_selector(selector).text_content().strip()
 
-    def _textos_de_celdas(self, fila):
-        return [c.text.strip() for c in self._leer_celdas(fila)]
+    def _leer_filas(self, seccion: ElementHandle, selector: str) -> list[ElementHandle]:
+        return seccion.query_selector_all(selector)
+
+    def _textos_de_celdas(self, fila: ElementHandle) -> list[str]:
+        return [c.text_content().strip() for c in self._leer_celdas(fila)]
