@@ -12,7 +12,7 @@ from scraper_senescyt.entities.models.base import Base
 import scraper_senescyt.entities.senescyt_consulta  # noqa: F401
 
 
-def create_schema(db_alias: str = "LOCAL"):
+def create_schema(db_alias: str = "SENESCYT"):
     """Crea todas las tablas declaradas en los modelos ORM si no existen.
 
     db_alias: prefijo de la BD destino (por defecto LOCAL).
@@ -26,3 +26,9 @@ def create_schema(db_alias: str = "LOCAL"):
     except Exception as e:
         print(f"Error al crear el esquema de base de datos: {e}")
         raise
+
+
+if __name__ == '__main__':
+    import sys
+    alias = sys.argv[1] if len(sys.argv) > 1 else 'SENESCYT'
+    create_schema(alias)

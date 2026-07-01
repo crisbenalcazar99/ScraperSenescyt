@@ -76,31 +76,33 @@ def run(worker_num: int = 0):
 
             _, cedula = item
             pipe = r.pipeline()
-            pipe.hset(RedisKey.HASH_ESTADO, cedula, CedulaEstado.CONSULTADA.CONSULTANDO)
-            pipe.hset(RedisKey.HASHTIMESTAMP, cedula, time.time())
+            pipe.hset(RedisKey.HASH_ESTADO,     cedula, CedulaEstado.CONSULTANDO)
+            pipe.hset(RedisKey.HASH_TIMESTAMP,  cedula, time.time())
             pipe.execute()
-            r.hset(RedisKey.HASH_ESTADO, cedula, CedulaEstado.CONSULTANDO)
 
             try:
                 resultado = scraper.consultar_cedula(cedula)
-                r.hset(RedisKey.HASH_ESTADO, cedula, CedulaEstado.CONSULTADA)
+                pipe = r.pipeline()
+                pipe.hset(RedisKey.HASH_ESTADO,    cedula, CedulaEstado.CONSULTADA)
                 pipe.hdel(RedisKey.HASH_TIMESTAMP, cedula)
+                pipe.execute()
 
                 entry = json.dumps({
-                    'cedula':          cedula,
-                    'sin_resultados':  not resultado.get('persona'),
-                    'resultado':       resultado,
+                    'cedula':         cedula,
+                    'sin_resultados': not resultado.get('persona'),
+                    'resultado':      resultado,
                 })
                 r.rpush(RedisKey.BUFFER_RESULTADOS, entry)
 
             except Exception as e:
                 print(f"[Worker {wid}] Error en {cedula}: {e}")
-                r.hset(RedisKey.HASH_ESTADO, cedula, CedulaEstado.ERROR)
-                # Backoff antes del siguiente intento
+                pipe = r.pipeline()
+                pipe.hset(RedisKey.HASH_ESTADO,    cedula, CedulaEstado.ERROR)
+                pipe.hdel(RedisKey.HASH_TIMESTAMP, cedula)
+                pipe.execute()
                 time.sleep(random.uniform(2, 5))
                 scraper.page.reload(wait_until='domcontentloaded')
                 scraper.cerrar_dialogo()
-                pipe.hdel(RedisKey.HASH_TIMESTAMP, cedula)
                 continue
 
             # ── Intentar flush del buffer (Lua atómico) ─────────────────────

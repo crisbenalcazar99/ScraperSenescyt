@@ -4,7 +4,7 @@
 # Claves y estados  →  scraper_senescyt/utils/redis_keys.py
 
 # Tamaño del buffer antes de hacer flush a PostgreSQL
-BUFFER_SIZE = 50
+BUFFER_SIZE = 20
 
 # Script Lua — flush atómico del buffer.
 # Garantiza que solo un worker hace el flush aunque varios vean LLEN >= 50.

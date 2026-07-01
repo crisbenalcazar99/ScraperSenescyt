@@ -19,7 +19,7 @@ def _cargar_cedulas(r, session, cursor: int) -> int:
     """Carga el siguiente batch desde la DB transaccional y retorna el nuevo cursor."""
     rows = session.execute(text("""
         SELECT id_user, cedula
-        FROM users
+        FROM senescyt_schema.users
         WHERE id_user > :cursor
         ORDER BY id_user
         LIMIT :limit

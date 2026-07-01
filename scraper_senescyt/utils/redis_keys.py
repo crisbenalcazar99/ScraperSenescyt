@@ -11,6 +11,7 @@ class RedisKey(str, Enum):
     """Claves usadas en Redis para la cola y el seguimiento de estado."""
     QUEUE_PENDIENTES  = 'queue:pendientes'
     HASH_ESTADO       = 'hash:estado'
+    HASH_TIMESTAMP    = 'hash:timestamp'
     BUFFER_RESULTADOS = 'buffer:resultado'
     REFILLER_CURSOR   = 'refiller:cursor'
 
